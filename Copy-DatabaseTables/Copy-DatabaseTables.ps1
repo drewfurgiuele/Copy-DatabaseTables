@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Allows for a synchronization of objects belonging to a particular schema or just one particular object inside that schema between two SQL Server instances.
+    Allows for a synchronization of objects belonging to a particular schema or just one particular object inside that schema between two SQL Server instances. Works well!
 .DESCRIPTION
     This script will attempt to synchronize a collection of table objects from a provided schema name (or one object inside the same schema). It can either compare all of the data inside each object and insert/update/delete rows as required or it can drop and recreate the objects each time.
     Please note that if the -rebuild parameter is provided the script will attempt to drop and create the objects first. Existing indexes and foreign key references will be maintained. The script will log all DDL statements to a .SQL file located in the provided -WorkingDirectory parameter
