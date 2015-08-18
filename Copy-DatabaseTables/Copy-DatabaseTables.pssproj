@@ -27,9 +27,6 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Content Include="Get-DatabaseObjects Repository Table DDL.sql" />
-  </ItemGroup>
-  <ItemGroup>
     <Compile Include="Copy-DatabaseTables.ps1" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
