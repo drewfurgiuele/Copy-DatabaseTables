@@ -62,7 +62,7 @@ param(
     [Alias("ddn","destinationdatabase")] [Parameter(Mandatory=$true)] [string]$DestinationDatabaseName,
     [Alias("dscn","destinationschema")]  [Parameter(Mandatory=$true)] [string]$DestinationSchemaName,
     [Parameter(Mandatory=$true)]         [string]$WorkingDirectory,
-    [Parameter(Mandatory=$false)]        [switch]$compareOnly
+    [Parameter(Mandatory=$false)]        [switch]$noCheckConstraints
 )
 
 $sourceSQLCmdServerInstance = $SourceServerName
@@ -106,6 +106,9 @@ if (!$compareOnly)
     $scriptingOptions.options.IncludeIfNotExists = $true
     $scriptingOptions.options.DriPrimaryKey = $true
 
+    $fkscriptingOptions = New-Object Microsoft.SqlServer.Management.Smo.Scripter($scriptingSrv)
+    if ($noCheckConstraints) { $fkscriptingOptions.options.DriWithNoCheck = $true }
+
     Write-Verbose "Using script file: $workFileName"
     foreach ($st in $sourceTables)
     {
@@ -144,15 +147,15 @@ if (!$compareOnly)
         $inCode | Out-File $workFileName -Append
     }
     Write-Verbose "There are $totalForeignKeys foreign keys to script out..."
+    if ($totalForeignKeys -gt 0) { Write-Verbose "Using script file: $workFileName (for foreign keys)" }
 
     foreach ($fk in $foreignKeys)
     {
-		Write-Verbose "Using script file: $workFileName (for foreign keys)"
         (Get-ChildItem -Path $destinationPath | Where-Object {$_.Name -eq $fk.ReferencedTable -and $_.Schema -eq $fk.ReferencedTableSchema}).ForeignKeys.Refresh()
         $fkObject = (Get-ChildItem -Path $destinationPath | Where-Object {$_.Name -eq $fk.Parent.Name -and $_.Schema -eq $fk.Parent.Schema}).ForeignKeys | Where-Object {$_.name -eq $fk.Name}
         $currentFKName = $fkObject.name
         Write-Verbose "Scripting foriegn key $currentFKName..."
-        $fkCode =  $fkObject.Script()
+        $fkCode = $fkscriptingOptions.Script($fkObject)
         $fkCode | Out-File $fkWorkFileName -Append
         Write-Verbose "Dropping foriegn key $currentFKName..."
         $fkObject.Drop()
