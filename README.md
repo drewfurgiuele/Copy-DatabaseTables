@@ -14,6 +14,6 @@ Instead, we can leverage PowerShell to copy a table and all its data all while p
 6. Bulk copy the data from the source to the destination
 7. Reapply all foreign keys
 
-Please note that this script requires the SQLPS module. As always, don't just run something in your production environment without testing it first.
+Please note that this script requires the SQLPS module. As always, don't just run something in your production environment without testing it first. This script was written in Visual Studio, so if you don't want the entire solution, just dig into the directories to get the .PS1 file.
 
 Did you like this script? Me too! You should send me a shout-out via twitter @pittfurg
