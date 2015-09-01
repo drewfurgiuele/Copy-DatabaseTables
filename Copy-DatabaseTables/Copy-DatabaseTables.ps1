@@ -1,9 +1,9 @@
 ﻿<#
 .SYNOPSIS
-    Allows for a synchronization of objects belonging to a particular schema or just one particular object inside that schema between two SQL Server instances.
+    Allows for a synchronization of tables belonging to a particular schema or just one particular table inside that database between two SQL Server instances.
 .DESCRIPTION
-    This script will attempt to synchronize a collection of table objects from a provided schema name (or one object inside the same schema). It can either compare all of the data inside each object and insert/update/delete rows as required or it can drop and recreate the objects each time.
-    Please note that if the -rebuild parameter is provided the script will attempt to drop and create the objects first. Existing indexes and foreign key references will be maintained. The script will log all DDL statements to a .SQL file located in the provided -WorkingDirectory parameter
+    This script will attempt to synchronize a collection of table objects from a provided schema name (or one object inside the same schema). The script will find all indexes, permissions, and foreign keys on the tables bein synced AND all related tables and drop and reapply them. Data will also be copied.
+    The script will log all DDL statements to a .SQL file located in the provided -WorkingDirectory parameter
 .PARAMETER SourceServerName
     Aliases: ssn, sourceserver
     The hostname of the SQL server you want to copy from. This is a required parameter.
@@ -33,20 +33,14 @@
     The name of the schema you the copied objects to appear in. The schema must exist already. This is a required parameter.
 .PARAMETER WorkingDirectory
     The path on your local computer where the DDL SQL statements will reside. Used during a rebuild to store object definitions. This is a required parameter.
-.PARAMETER Rebuild
-    Switch to indicate if the script should attempt to drop and recreate the target objects from the source. If not supplied only data will be synchronized. This is an optional parameter.
-.EXAMPLE
-    Connect to a SQL server of hostname 'RemoteServer' and collect all tables in the MDM database that reside in the MDM schema. Then, compare the data on those objects to the objects on the server localhost, in the database somedatabase in the MDM schema.
-
-    .\Request-MDMData.ps1 -SourceServerName RemoteServer -SourceDatabaseName MDM -SourceSchemaName MDM -DestinationServerName localhost -DestinationDatabaseName SomeDatabase -DestinationSchemaName MDM -WorkingDirectory C:\Scripts
 .EXAMPLE
     Connect to a SQL server of hostname 'RemoteServer' and collect all tables in the MDM database that reside in the MDM schema. Then, rebuild all the tables and data on the destination server
 
-    .\Request-MDMData.ps1 -SourceServerName RemoteServer -SourceDatabaseName MDM -SourceSchemaName MDM -DestinationServerName localhost -DestinationDatabaseName SomeDatabase -DestinationSchemaName MDM -WorkingDirectory C:\Scripts -Rebuild
+    .\Copy-DatabaseTables.ps1 -SourceServerName RemoteServer -SourceDatabaseName MDM -SourceSchemaName MDM -DestinationServerName localhost -DestinationDatabaseName SomeDatabase -DestinationSchemaName MDM -WorkingDirectory C:\Scripts
 .EXAMPLE
-    Connect to a SQL server of hostname 'RemoteServer' and collect the table named Sometimes in the MDM database in the MDM schema and compare the data in it and the same table in the MDM schema at the destination.
+    Connect to a SQL server of hostname 'RemoteServer' and collect the table named Sometimes in the MDM database in the MDM schema and copy it to the destination.
 
-    .\Request-MDMData.ps1 -SourceServerName RemoteServer -SourceDatabaseName MDM -SourceSchemaName MDM -SourceTableName SomeTable -DestinationServerName localhost -DestinationDatabaseName SomeDatabase -DestinationSchemaName MDM -WorkingDirectory C:\Scripts
+    .\Copy-DatabaseTables.ps1 -SourceServerName RemoteServer -SourceDatabaseName MDM -SourceSchemaName MDM -SourceTableName SomeTable -DestinationServerName localhost -DestinationDatabaseName SomeDatabase -DestinationSchemaName MDM -WorkingDirectory C:\Scripts
 .OUTPUTS
     None, unless -VERBOSE is specified. In fact, -VERBOSE is reccomended so you can see what is happening and when.
 .NOTES
