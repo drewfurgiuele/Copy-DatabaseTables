@@ -35,11 +35,9 @@
     The path on your local computer where the DDL SQL statements will reside. Used during a rebuild to store object definitions. This is a required parameter.
 .EXAMPLE
     Connect to a SQL server of hostname 'RemoteServer' and collect all tables in the MDM database that reside in the MDM schema. Then, rebuild all the tables and data on the destination server
-
     .\Copy-DatabaseTables.ps1 -SourceServerName RemoteServer -SourceDatabaseName MDM -SourceSchemaName MDM -DestinationServerName localhost -DestinationDatabaseName SomeDatabase -DestinationSchemaName MDM -WorkingDirectory C:\Scripts
 .EXAMPLE
     Connect to a SQL server of hostname 'RemoteServer' and collect the table named Sometimes in the MDM database in the MDM schema and copy it to the destination.
-
     .\Copy-DatabaseTables.ps1 -SourceServerName RemoteServer -SourceDatabaseName MDM -SourceSchemaName MDM -SourceTableName SomeTable -DestinationServerName localhost -DestinationDatabaseName SomeDatabase -DestinationSchemaName MDM -WorkingDirectory C:\Scripts
 .OUTPUTS
     None, unless -VERBOSE is specified. In fact, -VERBOSE is reccomended so you can see what is happening and when.
@@ -71,6 +69,7 @@ $destinationDB = Get-ChildItem -Path ("SQLSERVER:\SQL\" + $destinationServerName
 $sourceDB = Get-ChildItem -Path ("SQLSERVER:\SQL\" + $sourceServerName + "\" + $sourceInstanceName + "\Databases") | Where-Object {$_.Name -eq $SourceDatabaseName}
 $destinationDB.Tables.Refresh()
 $tables = Get-ChildItem -Path $destinationPath
+$sbviews = Get-ChildItem -Path "SQLSERVER:\SQL\$destinationServerName\$destinationInstanceName\Databases\$destinationDatabaseName\views" | Where-Object {$_.IsSchemaBound -eq $true}
 foreach ($t in $tables)
 {
 	$t.ForeignKeys.Refresh()
@@ -84,80 +83,104 @@ if ($SourceTableName)
     $tables = $tables | Where-Object {$_.Name -eq $SourceTableName -and $_.Schema -eq $SourceSchemaName}
     $sourceTables = $sourceTables | Where-Object {$_.Name -eq $SourceTableName -and $_.Schema -eq $SourceSchemaName}
 }
-if (!$compareOnly)
+$permissions = @()
+$foreignKeys = @()
+$indexes = @()
+$timestamp = Get-Date -UFormat "%Y%m%d_%H%M%S"
+$dropFileName = $WorkingDirectory + "\CopyDatabaseTables_DropFile_" + $DestinationServerName + "_" + $DestinationDatabaseName + "_" + $timestamp + ".sql"
+$workFileName = $WorkingDirectory + "\CopyDatabaseTables_WorkFile_" + $DestinationServerName + "_" + $DestinationDatabaseName + "_" + $timestamp + ".sql"
+$fkWorkFileName = $WorkingDirectory + "\CopyDatabaseTables_FKWorkFile_" + $DestinationServerName + "_" + $DestinationDatabaseName + "_" + $timestamp + ".sql"
+$scriptingSrv = New-Object Microsoft.SqlServer.Management.Smo.Server($sourceSQLCmdServerInstance)
+$dropOptions = New-Object Microsoft.SqlServer.Management.Smo.Scripter($scriptingSrv)
+$dropOptions.options.ScriptDrops = $true
+$dropOptions.options.IncludeIfNotExists = $true
+$scriptingOptions = New-Object Microsoft.SqlServer.Management.Smo.Scripter($scriptingSrv)
+$scriptingOptions.options.IncludeIfNotExists = $true
+$scriptingOptions.options.DriPrimaryKey = $true
+
+$fkscriptingOptions = New-Object Microsoft.SqlServer.Management.Smo.Scripter($scriptingSrv)
+if ($noCheckConstraints) { $fkscriptingOptions.options.DriWithNoCheck = $true }
+
+foreach ($sbv in $sbviews)
 {
-    $permissions = @()
-    $foreignKeys = @()
-    $indexes = @()
-    $timestamp = Get-Date -UFormat "%Y%m%d_%H%M%S"
-    $workFileName = $WorkingDirectory + "\CopyDatabaseTables_WorkFile_" + $timestamp + ".sql"
-    $fkWorkFileName = $WorkingDirectory + "\CopyDatabaseTables_FKWorkFile_" + $timestamp + ".sql"
-    $scriptingSrv = New-Object Microsoft.SqlServer.Management.Smo.Server($sourceSQLCmdServerInstance)
-    $dropOptions = New-Object Microsoft.SqlServer.Management.Smo.Scripter($scriptingSrv)
-    $dropOptions.options.ScriptDrops = $true
-    $dropOptions.options.IncludeIfNotExists = $true
-    $scriptingOptions = New-Object Microsoft.SqlServer.Management.Smo.Scripter($scriptingSrv)
-    $scriptingOptions.options.IncludeIfNotExists = $true
-    $scriptingOptions.options.DriPrimaryKey = $true
-
-    $fkscriptingOptions = New-Object Microsoft.SqlServer.Management.Smo.Scripter($scriptingSrv)
-    if ($noCheckConstraints) { $fkscriptingOptions.options.DriWithNoCheck = $true }
-
-    Write-Verbose "Using script file: $workFileName"
-    foreach ($st in $sourceTables)
-    {
-        $currentTable = $st.Schema + "." + $st.Name
-        Write-Verbose "Scripting table $currentTable..."
-        $dropCode = $dropOptions.Script($st)
-        $tblCode = $scriptingOptions.Script($st)
-        $dropCode | Out-File $workFileName -Append
-        $tblCode | Out-File $workFileName -Append
-    }
-    Write-Verbose "Finding and saving any existing foreign key and index information.."
-    ForEach ($t in $tables) 
-    {
-		$t.ForeignKeys.Refresh()
-        $objectPermissions += $t.EnumObjectPermissions()
-        $foreignKeys += $t.ForeignKeys
-        $indexes += $t.Indexes | Where-Object {$_.IndexKeyType -ne "DriPrimaryKey"}
-    }
-    $foreignKeys += (Get-ChildItem -Path $destinationPath | Where-Object {$_.ForeignKeys.ReferencedTableSchema -eq $DestinationSchemaName}).ForeignKeys | Where-Object {$_.ReferencedTableSchema -eq $DestinationSchemaName -and $foreignKeys -notcontains $_}
-    Write-Verbose "Capturing Permissions..."
-    ForEach ($p in $objectPermissions)
-    {
-        $permissionsString =  ($p.PermissionState).ToString() + " " + ($p.PermissionType).ToString() + " ON [" + ($p.ObjectSchema).ToString() + "].[" + ($p.ObjectName).ToString() + "] TO [" + ($p.Grantee).ToString() + "]";
-        Write-Verbose "Capturing object permission: $permissionsString"
-        $permissionsString | Out-File $workFileName -Append
-    }
-
-    $totalForeignKeys = $foreignKeys.Count
-    $totalIndexes = $indexes.Count
-    Write-Verbose "There are $totalIndexes indexes to script out..."
-    ForEach ($in in $indexes)
-    {
-        $currentIndex = $in.name
-        Write-Verbose "Scripting index $currentIndex..."
-        $inCode =  $in.Script()
-        $inCode | Out-File $workFileName -Append
-    }
-    Write-Verbose "There are $totalForeignKeys foreign keys to script out..."
-    if ($totalForeignKeys -gt 0) { Write-Verbose "Using script file: $workFileName (for foreign keys)" }
-
-    foreach ($fk in $foreignKeys)
-    {
-        (Get-ChildItem -Path $destinationPath | Where-Object {$_.Name -eq $fk.ReferencedTable -and $_.Schema -eq $fk.ReferencedTableSchema}).ForeignKeys.Refresh()
-        $fkObject = (Get-ChildItem -Path $destinationPath | Where-Object {$_.Name -eq $fk.Parent.Name -and $_.Schema -eq $fk.Parent.Schema}).ForeignKeys | Where-Object {$_.name -eq $fk.Name}
-        $currentFKName = $fkObject.name
-        Write-Verbose "Scripting foriegn key $currentFKName..."
-        $fkCode = $fkscriptingOptions.Script($fkObject)
-        $fkCode | Out-File $fkWorkFileName -Append
-        Write-Verbose "Dropping foriegn key $currentFKName..."
-        $fkObject.Drop()
-    }
-
-    Write-Verbose "Applying workfile $workfilename"
-    Invoke-Sqlcmd -ServerInstance $destinationSQLCmdServerInstance -Database $DestinationDatabaseName -InputFile $workfilename -Verbose
+    $currentView = $sbv.Schema + "." + $sbv.Name
+    Write-Verbose "Scripting schema bound view $currentView..."
+    $dropCode = $dropOptions.Script($sbv)
+    $dropCode | Out-File $dropFileName -Append
 }
+   
+foreach ($st in $sourceTables)
+{
+    $currentTable = $st.Schema + "." + $st.Name
+    Write-Verbose "Scripting table $currentTable..."
+    $dropCode = $dropOptions.Script($st)
+    $tblCode = $scriptingOptions.Script($st)
+    $dropCode | Out-File $dropFileName -Append
+    $tblCode | Out-File $workFileName -Append
+}
+
+foreach ($sbv in $sbviews)
+{
+    $currentView = $sbv.Schema + "." + $sbv.Name
+    Write-Verbose "Scripting schema bound view $currentView..."
+    $tblCode = $scriptingOptions.Script($sbv)
+    $tblCode | Out-File $workFileName -Append
+}
+
+foreach ($sbv in $sbviews)
+{
+    $currentView = $sbv.Schema + "." + $sbv.Name
+    Write-Verbose "Scripting schema bound view $currentView..."
+    $dropCode = $dropOptions.Script($sbv)
+    $dropCode | Out-File $dropFileName -Append
+}
+
+Write-Verbose "Finding and saving any existing foreign key and index information.."
+ForEach ($t in $tables) 
+{
+	$t.ForeignKeys.Refresh()
+    $objectPermissions += $t.EnumObjectPermissions()
+    $foreignKeys += $t.ForeignKeys
+    $indexes += $t.Indexes | Where-Object {$_.IndexKeyType -ne "DriPrimaryKey"}
+}
+$foreignKeys += (Get-ChildItem -Path $destinationPath | Where-Object {$_.ForeignKeys.ReferencedTableSchema -eq $DestinationSchemaName}).ForeignKeys | Where-Object {$_.ReferencedTableSchema -eq $DestinationSchemaName -and $foreignKeys -notcontains $_}
+Write-Verbose "Capturing Permissions..."
+ForEach ($p in $objectPermissions)
+{
+    $permissionsString =  ($p.PermissionState).ToString() + " " + ($p.PermissionType).ToString() + " ON [" + ($p.ObjectSchema).ToString() + "].[" + ($p.ObjectName).ToString() + "] TO [" + ($p.Grantee).ToString() + "]";
+    Write-Verbose "Capturing object permission: $permissionsString"
+    $permissionsString | Out-File $workFileName -Append
+}
+
+$totalForeignKeys = $foreignKeys.Count
+$totalIndexes = $indexes.Count
+Write-Verbose "There are $totalIndexes indexes to script out..."
+ForEach ($in in $indexes)
+{
+    $currentIndex = $in.name
+    Write-Verbose "Scripting index $currentIndex..."
+    $inCode =  $in.Script()
+    $inCode | Out-File $workFileName -Append
+}
+Write-Verbose "There are $totalForeignKeys foreign keys to script out..."
+if ($totalForeignKeys -gt 0) { Write-Verbose "Using script file: $workFileName (for foreign keys)" }
+
+foreach ($fk in $foreignKeys)
+{
+    (Get-ChildItem -Path $destinationPath | Where-Object {$_.Name -eq $fk.ReferencedTable -and $_.Schema -eq $fk.ReferencedTableSchema}).ForeignKeys.Refresh()
+    $fkObject = (Get-ChildItem -Path $destinationPath | Where-Object {$_.Name -eq $fk.Parent.Name -and $_.Schema -eq $fk.Parent.Schema}).ForeignKeys | Where-Object {$_.name -eq $fk.Name}
+    $currentFKName = $fkObject.name
+    Write-Verbose "Scripting foriegn key $currentFKName..."
+    $fkCode = $fkscriptingOptions.Script($fkObject)
+    $fkCode | Out-File $fkWorkFileName -Append
+    Write-Verbose "Dropping foriegn key $currentFKName..."
+    $fkObject.Drop()
+}
+
+Write-Verbose "Applying dropfile $dropfileName"
+Invoke-Sqlcmd -ServerInstance $destinationSQLCmdServerInstance -Database $DestinationDatabaseName -InputFile $dropfilename -Verbose
+Write-Verbose "Applying workfile $workfilename"
+Invoke-Sqlcmd -ServerInstance $destinationSQLCmdServerInstance -Database $DestinationDatabaseName -InputFile $workfilename -Verbose
 
 ForEach ($st in $sourceTables)
 {
