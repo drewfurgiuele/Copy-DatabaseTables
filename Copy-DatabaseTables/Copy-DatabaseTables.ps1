@@ -43,6 +43,7 @@
     None, unless -VERBOSE is specified. In fact, -VERBOSE is reccomended so you can see what is happening and when.
 .NOTES
 #>
+[CmdletBinding()] 
 param(
     [Alias("ssn","sourceserver")]        [Parameter(Mandatory=$true)] [string]$SourceServerName,
     [Alias("sin","sourceinstance")]      [Parameter(Mandatory=$false)] [string]$SourceInstanceName = "DEFAULT",
