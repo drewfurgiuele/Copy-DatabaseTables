@@ -43,7 +43,7 @@
     None, unless -VERBOSE is specified. In fact, -VERBOSE is reccomended so you can see what is happening and when.
 .NOTES
 #>
-[CmdletBinding()] 
+[cmdletbinding()]
 param(
     [Alias("ssn","sourceserver")]        [Parameter(Mandatory=$true)] [string]$SourceServerName,
     [Alias("sin","sourceinstance")]      [Parameter(Mandatory=$false)] [string]$SourceInstanceName = "DEFAULT",
@@ -128,13 +128,13 @@ foreach ($sbv in $sbviews)
     $tblCode | Out-File $workFileName -Append
 }
 
-foreach ($sbv in $sbviews)
-{
-    $currentView = $sbv.Schema + "." + $sbv.Name
-    Write-Verbose "Scripting schema bound view $currentView..."
-    $dropCode = $dropOptions.Script($sbv)
-    $dropCode | Out-File $dropFileName -Append
-}
+#foreach ($sbv in $sbviews)
+#{
+#    $currentView = $sbv.Schema + "." + $sbv.Name
+#    Write-Verbose "Scripting schema bound view $currentView..."
+#    $dropCode = $dropOptions.Script($sbv)
+#    $dropCode | Out-File $dropFileName -Append
+#}
 
 Write-Verbose "Finding and saving any existing foreign key and index information.."
 ForEach ($t in $tables) 
